@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TeamWear Scanner</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#11161c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TW Scanner">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    /* layout: full-height app shell — sticky top bar, scrollable scan panel, sticky bottom status */
+    --bg: #11161c;
+    --bg-raised: #171e26;
+    --bg-sunken: #0c1014;
+    --line: #27313c;
+    --fg: #e8edf2;
+    --fg-dim: #8b98a6;
+    --fg-faint: #5b6774;
+    --accent: #e8a33d;
+    --accent-fg: #171107;
+    --live: #4fd1c5;
+    --ok: #4fae6a;
+    --warn: #e8a33d;
+    --bad: #e05a5a;
+    --font-display: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    color-scheme: dark;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--fg); font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased; display:flex; flex-direction:column;
+  }
+  ::selection{ background:var(--accent); color:var(--accent-fg); }
+  a{ color:var(--live); }
+
+  header{
+    position:sticky; top:0; z-index:20; background:var(--bg); border-bottom:1px solid var(--line);
+    padding:calc(14px + env(safe-area-inset-top,0px)) 16px 14px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .brand h1{ font-family:var(--font-display); font-size:16px; font-weight:600; margin:0; letter-spacing:.02em; white-space:nowrap; }
+  .brand .tag{ font-size:11px; color:var(--fg-faint); font-family:var(--font-mono); white-space:nowrap; }
+  .catalog-badge{
+    font-family:var(--font-mono); font-size:11px; padding:5px 9px; border-radius:6px;
+    background:var(--bg-raised); border:1px solid var(--line); color:var(--fg-dim); white-space:nowrap;
+    display:flex; align-items:center; gap:6px; flex-shrink:0;
+  }
+  .catalog-badge .dot{ width:6px; height:6px; border-radius:50%; background:var(--fg-faint); }
+  .catalog-badge.has-data .dot{ background:var(--ok); }
+
+  main{ flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; padding-bottom:24px; max-width:720px; width:100%; margin:0 auto; }
+
+  /* --- Scanner panel --- */
+  .scan-card{
+    background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  }
+  .scan-viewport{
+    position:relative; width:100%; aspect-ratio:1/1; background:var(--bg-sunken);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  #reader{ width:100%; height:100%; }
+  #reader video{ object-fit:cover !important; width:100% !important; height:100% !important; }
+  .scan-placeholder{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:24px; text-align:center; color:var(--fg-dim); font-size:13px;
+  }
+  .scan-placeholder svg{ width:40px; height:40px; opacity:.5; }
+  .scan-frame{
+    position:absolute; inset:14%; border:2px solid var(--live); border-radius:14px; pointer-events:none;
+    opacity:0; transition:opacity .2s;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.28);
+  }
+  .scan-frame.active{ opacity:.9; }
+  .scan-frame::before,.scan-frame::after{ content:''; position:absolute; width:22px; height:22px; border-color:var(--accent); }
+  .laser{
+    position:absolute; left:16%; right:16%; height:2px; background:var(--live); border-radius:2px;
+    box-shadow:0 0 8px 1px var(--live); opacity:0; top:16%;
+  }
+  .scan-frame.active .laser{ opacity:.9; animation:sweep 1.6s ease-in-out infinite; }
+  @keyframes sweep{ 0%,100%{ top:16% } 50%{ top:84% } }
+  @media (prefers-reduced-motion:reduce){ .scan-frame.active .laser{ animation:none; top:50%; } }
+
+  .scan-controls{ display:flex; gap:8px; padding:12px; flex-wrap:wrap; }
+  .scan-controls select{ flex:1; min-width:140px; }
+
+  button, select, input[type=text]{
+    font-family:var(--font-body); font-size:14px; border-radius:8px; border:1px solid var(--line);
+    background:var(--bg-sunken); color:var(--fg); padding:9px 12px;
+  }
+  button{ cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:6px; justify-content:center; white-space:nowrap; transition:background .15s,border-color .15s; }
+  button:hover{ border-color:var(--fg-faint); }
+  button:active{ transform:translateY(1px); }
+  button.primary{ background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  button.primary:hover{ background:#f0ae4d; }
+  button.ghost{ background:transparent; }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  button:focus-visible, select:focus-visible, input:focus-visible{ outline:2px solid var(--live); outline-offset:1px; }
+
+  /* --- Manual entry --- */
+  .manual-row{ display:flex; gap:8px; padding:0 12px 12px; }
+  .manual-row input{ flex:1; font-family:var(--font-mono); letter-spacing:.03em; }
+
+  /* --- Result card --- */
+  .result{
+    border-radius:12px; border:1px solid var(--line); background:var(--bg-raised); padding:16px;
+    display:none;
+  }
+  .result.show{ display:block; animation:pop .18s ease-out; }
+  @keyframes pop{ from{ transform:scale(.98); opacity:.6 } to{ transform:scale(1); opacity:1 } }
+  .result-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+  .result-code{ font-family:var(--font-mono); font-size:19px; font-weight:600; letter-spacing:.02em; word-break:break-all; }
+  .result-status{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0; text-transform:uppercase; letter-spacing:.04em; }
+  .result-status.ok{ background:rgba(79,174,106,.15); color:var(--ok); }
+  .result-status.miss{ background:rgba(224,90,90,.15); color:var(--bad); }
+  .result-fields{ display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:14px; }
+  .result-fields dt{ color:var(--fg-faint); font-size:12px; grid-column:1; align-self:start; padding-top:1px; }
+  .result-fields dd{ margin:0; grid-column:2; min-width:0; }
+  .result-note{ margin-top:10px; font-size:12.5px; color:var(--fg-dim); }
+
+  /* --- Sections --- */
+  section{ background:var(--bg-raised); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  section > h2{ font-family:var(--font-display); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--fg-dim); margin:0 0 12px; display:flex; align-items:center; justify-content:space-between; }
+  section > h2 .count{ font-family:var(--font-mono); color:var(--fg-faint); font-weight:500; text-transform:none; letter-spacing:0; }
+
+  .drop{
+    border:1.5px dashed var(--line); border-radius:10px; padding:18px; text-align:center; color:var(--fg-dim);
+    font-size:13px; cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.drag{ border-color:var(--live); background:rgba(79,209,197,.05); }
+  .drop input{ display:none; }
+  .drop .big{ color:var(--fg); font-weight:600; margin-bottom:3px; }
+
+  details{ font-size:13px; color:var(--fg-dim); }
+  details summary{ cursor:pointer; color:var(--live); font-weight:500; list-style:none; }
+  details summary::-webkit-details-marker{ display:none; }
+  details summary::before{ content:'▸ '; }
+  details[open] summary::before{ content:'▾ '; }
+  details .body{ margin-top:10px; line-height:1.6; }
+  details code{ font-family:var(--font-mono); background:var(--bg-sunken); padding:1px 5px; border-radius:4px; font-size:12px; }
+  details ul{ margin:6px 0; padding-left:18px; }
+
+  .history-list{ display:flex; flex-direction:column; gap:1px; max-height:320px; overflow-y:auto; margin:0 -16px; padding:0 16px; }
+  .history-row{
+    display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px;
+  }
+  .history-row:last-child{ border-bottom:none; }
+  .history-row .hdot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .history-row .hdot.ok{ background:var(--ok); }
+  .history-row .hdot.miss{ background:var(--bad); }
+  .history-row .hcode{ font-family:var(--font-mono); flex-shrink:0; }
+  .history-row .hdesc{ color:var(--fg-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .history-row .htime{ color:var(--fg-faint); font-family:var(--font-mono); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .empty{ color:var(--fg-faint); font-size:13px; padding:8px 0; }
+
+  .section-actions{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .limits{ font-size:12.5px; color:var(--fg-dim); line-height:1.6; }
+  .limits strong{ color:var(--fg); }
+
+  footer{ text-align:center; padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px)); color:var(--fg-faint); font-size:11.5px; font-family:var(--font-mono); }
+
+  @media (max-width:420px){
+    .result-fields{ grid-template-columns:1fr; }
+    .result-fields dt{ grid-column:1; padding-top:6px; }
+    .result-fields dd{ grid-column:1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>TeamWear Scanner</h1>
+    <span class="tag">lettura codici articolo</span>
+  </div>
+  <div class="catalog-badge" id="catalogBadge"><span class="dot"></span><span id="catalogBadgeText">catalogo vuoto</span></div>
+</header>
+
+<main>
+
+  <div class="scan-card">
+    <div class="scan-viewport">
+      <div id="reader"></div>
+      <div class="scan-placeholder" id="scanPlaceholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7V5a1 1 0 0 1 1-1h2M4 17v2a1 1 0 0 0 1 1h2M20 7V5a1 1 0 0 0-1-1h-2M20 17v2a1 1 0 0 1-1 1h-2M7 9v6M11 9v6M14 9v6M17 9v6"/></svg>
+        <span>Fotocamera spenta — premi "Avvia scansione"</span>
+      </div>
+      <div class="scan-frame" id="scanFrame"><div class="laser"></div></div>
+    </div>
+    <div class="scan-controls">
+      <button class="primary" id="btnStart">▶ Avvia scansione</button>
+      <button class="ghost" id="btnStop" disabled>■ Ferma</button>
+      <select id="cameraSelect" disabled><option>Nessuna fotocamera</option></select>
+      <button class="ghost" id="btnTorch" disabled title="Torcia">⚡</button>
+    </div>
+    <div class="manual-row">
+      <input type="text" id="manualInput" placeholder="…oppure digita o incolla il codice qui e premi Invio" autocomplete="off" spellcheck="false">
+      <button id="btnManual">Cerca</button>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="result-top">
+      <div class="result-code" id="resCode">—</div>
+      <div class="result-status" id="resStatus">—</div>
+    </div>
+    <dl class="result-fields" id="resFields"></dl>
+    <div class="result-note" id="resNote"></div>
+  </div>
+
+  <section>
+    <h2>Catalogo articoli <span class="count" id="catalogCount"></span></h2>
+    <label class="drop" id="dropZone">
+      <div class="big">Importa catalogo da CSV</div>
+      <div>esportato da Danea Easyfatt (Anagrafica Articoli → Esporta tabella) — trascina il file qui o tocca per scegliere</div>
+      <input type="file" id="fileInput" accept=".csv,text/csv">
+    </label>
+    <div class="section-actions">
+      <button class="ghost" id="btnClearCatalog">Svuota catalogo</button>
+    </div>
+    <details style="margin-top:12px">
+      <summary>Come esportare il catalogo da Easyfatt</summary>
+      <div class="body">
+        In Easyfatt apri <strong>Anagrafica → Articoli</strong>, seleziona le colonne che vuoi (almeno <code>Codice articolo</code> e <code>Codice a barre</code>, utile anche <code>Descrizione</code> e <code>Prezzo</code>), poi <strong>Esporta tabella → CSV</strong>.
+        <ul>
+          <li>Lo scanner riconosce da solo le colonne più comuni (barcode/EAN, codice articolo, descrizione, prezzo, giacenza) in italiano o inglese.</li>
+          <li>Il file resta <strong>solo nel tuo browser</strong>: non viene inviato a nessun server. Riimportalo quando il catalogo cambia.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>Cronologia scansioni <span class="count" id="historyCount">0</span></h2>
+    <div class="history-list" id="historyList">
+      <div class="empty">Nessuna scansione in questa sessione.</div>
+    </div>
+    <div class="section-actions">
+      <button class="ghost" id="btnExportHistory">Esporta CSV</button>
+      <button class="ghost" id="btnClearHistory">Svuota cronologia</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Limiti — leggi prima di usarlo in negozio</h2>
+    <div class="limits">
+      Questo scanner <strong>non è collegato in diretta a Danea Easyfatt</strong>: Easyfatt è un gestionale desktop e non espone un'API pubblica interrogabile da un'app web. Il confronto avviene contro lo <strong>snapshot CSV</strong> che importi sopra, tenuto solo nella memoria di questo browser. Se aggiungi o modifichi articoli in Easyfatt, il catalogo qui resta vecchio finché non re-importi il file. Nessun dato esce da questo dispositivo.
+    </div>
+  </section>
+
+</main>
+
+<footer>TeamWear · elaborazione 100% locale, nessun invio a server esterni</footer>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---------- state ----------
+  var catalog = new Map();      // normalized code -> record
+  var catalogRows = 0;
+  var history = [];             // {code, format, matched, description, ts}
+  var scanner = null;
+  var scanning = false;
+  var lastCode = null, lastCodeAt = 0;
+  var currentTrack = null;
+
+  var el = function(id){ return document.getElementById(id); };
+  var catalogBadge = el('catalogBadge'), catalogBadgeText = el('catalogBadgeText'), catalogCount = el('catalogCount');
+  var resultBox = el('result'), resCode = el('resCode'), resStatus = el('resStatus'), resFields = el('resFields'), resNote = el('resNote');
+  var historyList = el('historyList'), historyCount = el('historyCount');
+  var scanFrame = el('scanFrame'), scanPlaceholder = el('scanPlaceholder');
+
+  // ---------- storage (best-effort, never required) ----------
+  function saveCatalog(){
+    try{
+      var arr = [];
+      catalog.forEach(function(v){ arr.push(v); });
+      localStorage.setItem('tw_catalog', JSON.stringify(arr));
+    }catch(e){ /* storage unavailable: catalog just stays in-memory for this session */ }
+  }
+  function loadCatalog(){
+    try{
+      var raw = localStorage.getItem('tw_catalog');
+      if(!raw) return;
+      var arr = JSON.parse(raw);
+      arr.forEach(function(rec){ indexRecord(rec); });
+      refreshCatalogBadge();
+    }catch(e){ /* ignore */ }
+  }
+  function saveHistory(){
+    try{ localStorage.setItem('tw_history', JSON.stringify(history.slice(0,500))); }catch(e){}
+  }
+  function loadHistory(){
+    try{
+      var raw = localStorage.getItem('tw_history');
+      if(!raw) return;
+      history = JSON.parse(raw);
+      renderHistory();
+    }catch(e){}
+  }
+
+  // ---------- catalog indexing ----------
+  function normCode(s){ return (s||'').toString().trim().replace(/\s+/g,''); }
+
+  function indexRecord(rec){
+    catalogRows++;
+    if(rec.barcode) catalog.set(normCode(rec.barcode), rec);
+    if(rec.articleCode) catalog.set(normCode(rec.articleCode), rec);
+  }
+
+  function refreshCatalogBadge(){
+    var n = catalogRows;
+    catalogCount.textContent = n ? ('(' + n + ' articoli)') : '';
+    if(n > 0){
+      catalogBadge.classList.add('has-data');
+      catalogBadgeText.textContent = n + ' articoli caricati';
+    } else {
+      catalogBadge.classList.remove('has-data');
+      catalogBadgeText.textContent = 'catalogo vuoto';
+    }
+  }
+
+  // ---------- tiny CSV parser (handles quoted fields, , or ; delimiter) ----------
+  function parseCSV(text){
+    text = text.replace(/^﻿/, '');
+    var delim = (text.indexOf(';') > -1 && text.split(';').length > text.split(',').length) ? ';' : ',';
+    var rows = [], row = [], field = '', inQuotes = false;
+    for(var i=0;i<text.length;i++){
+      var c = text[i];
+      if(inQuotes){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; } else { inQuotes = false; }
+        } else { field += c; }
+      } else {
+        if(c === '"'){ inQuotes = true; }
+        else if(c === delim){ row.push(field); field = ''; }
+        else if(c === '\n' || c === '\r'){
+          if(c === '\r' && text[i+1] === '\n') i++;
+          row.push(field); field='';
+          if(row.length > 1 || row[0] !== ''){ rows.push(row); }
+          row = [];
+        } else { field += c; }
+      }
+    }
+    if(field !== '' || row.length){ row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  var HEADER_MAP = {
+    barcode: ['codice a barre','cod. a barre','cod a barre','barcode','ean','ean13','ean-13','codicebarre','codice barre'],
+    articleCode: ['codice articolo','cod. articolo','cod articolo','codice','sku','cod.articolo','articolo'],
+    description: ['descrizione','description','nome articolo','descrizione articolo'],
+    price: ['prezzo','prezzo vendita','price','prezzo di vendita'],
+    stock: ['giacenza','qta','quantità','quantita','stock','disponibilità','disponibilita']
+  };
+
+  function matchHeader(h){
+    var hl = h.trim().toLowerCase();
+    for(var key in HEADER_MAP){
+      if(HEADER_MAP[key].indexOf(hl) > -1) return key;
+    }
+    return null;
+  }
+
+  function importCSVText(text, filename){
+    var rows = parseCSV(text);
+    if(!rows.length){ return alertish('File vuoto o non leggibile.'); }
+    var headers = rows[0].map(matchHeader);
+    var hasAny = headers.some(function(h){ return !!h; });
+    if(!hasAny){ return alertish('Non riconosco le colonne in "' + filename + '". Servono almeno Codice articolo o Codice a barre.'); }
+
+    var added = 0;
+    for(var r=1; r<rows.length; r++){
+      var line = rows[r];
+      if(!line || !line.length) continue;
+      var rec = {};
+      headers.forEach(function(key, idx){
+        if(key) rec[key] = (line[idx] || '').trim();
+      });
+      if(!rec.barcode && !rec.articleCode) continue;
+      indexRecord(rec);
+      added++;
+    }
+    saveCatalog();
+    refreshCatalogBadge();
+    resNote.textContent = '';
+  }
+
+  function alertish(msg){
+    resultBox.classList.add('show');
+    resCode.textContent = 'Import catalogo';
+    resStatus.textContent = 'errore';
+    resStatus.className = 'result-status miss';
+    resFields.innerHTML = '';
+    resNote.textContent = msg;
+  }
+
+  // ---------- drag & drop / file input ----------
+  var dropZone = el('dropZone'), fileInput = el('fileInput');
+  ['dragover','dragenter'].forEach(function(ev){
+    dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    dropZone.addEventListener(ev, function(e){ e.preventDefault(); dropZone.classList.remove('drag'); });
+  });
+  dropZone.addEventListener('drop', function(e){
+    var f = e.dataTransfer.files[0];
+    if(f) readFile(f);
+  });
+  fileInput.addEventListener('change', function(){
+    if(fileInput.files[0]) readFile(fileInput.files[0]);
+  });
+  function readFile(f){
+    var reader = new FileReader();
+    reader.onload = function(){ importCSVText(reader.result, f.name); };
+    reader.readAsText(f, 'utf-8');
+  }
+  el('btnClearCatalog').addEventListener('click', function(){
+    catalog = new Map(); catalogRows = 0;
+    try{ localStorage.removeItem('tw_catalog'); }catch(e){}
+    refreshCatalogBadge();
+  });
+
+  // ---------- lookup + result rendering ----------
+  function handleCode(code, format){
+    var now = Date.now();
+    if(code === lastCode && (now - lastCodeAt) < 2000) return; // debounce repeats
+    lastCode = code; lastCodeAt = now;
+
+    if(navigator.vibrate) navigator.vibrate(60);
+
+    var key = normCode(code);
+    var rec = catalog.get(key);
+
+    resultBox.classList.add('show');
+    resCode.textContent = code;
+    resFields.innerHTML = '';
+
+    var entry = { code: code, format: format || '', matched: !!rec, description: rec ? (rec.description||'') : '', ts: now };
+    history.unshift(entry);
+    history = history.slice(0, 500);
+    saveHistory();
+    renderHistory();
+
+    if(rec){
+      resStatus.textContent = 'trovato';
+      resStatus.className = 'result-status ok';
+      resNote.textContent = '';
+      addField('Codice articolo', rec.articleCode || '—');
+      addField('Descrizione', rec.description || '—');
+      if(rec.price) addField('Prezzo', rec.price);
+      if(rec.stock) addField('Giacenza', rec.stock);
+      if(format) addField('Formato', format);
+    } else {
+      resStatus.textContent = 'non trovato';
+      resStatus.className = 'result-status miss';
+      addField('Formato', format || '—');
+      resNote.textContent = catalogRows
+        ? 'Codice non presente nel catalogo importato. Potrebbe essere un articolo nuovo o il catalogo potrebbe essere vecchio — ricontrolla su Easyfatt.'
+        : 'Nessun catalogo caricato: importa il CSV qui sotto per far riconoscere gli articoli.';
+    }
+  }
+
+  function addField(label, value){
+    var dt = document.createElement('dt'); dt.textContent = label;
+    var dd = document.createElement('dd'); dd.textContent = value;
+    resFields.appendChild(dt); resFields.appendChild(dd);
+  }
+
+  function renderHistory(){
+    historyCount.textContent = history.length;
+    if(!history.length){
+      historyList.innerHTML = '<div class="empty">Nessuna scansione in questa sessione.</div>';
+      return;
+    }
+    historyList.innerHTML = '';
+    history.slice(0, 100).forEach(function(h){
+      var row = document.createElement('div'); row.className = 'history-row';
+      var dot = document.createElement('span'); dot.className = 'hdot ' + (h.matched ? 'ok' : 'miss');
+      var code = document.createElement('span'); code.className = 'hcode'; code.textContent = h.code;
+      var desc = document.createElement('span'); desc.className = 'hdesc'; desc.textContent = h.description || (h.matched ? '' : 'non trovato');
+      var time = document.createElement('span'); time.className = 'htime';
+      time.textContent = new Date(h.ts).toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      row.appendChild(dot); row.appendChild(code); row.appendChild(desc); row.appendChild(time);
+      historyList.appendChild(row);
+    });
+  }
+
+  el('btnClearHistory').addEventListener('click', function(){
+    history = [];
+    try{ localStorage.removeItem('tw_history'); }catch(e){}
+    renderHistory();
+  });
+
+  el('btnExportHistory').addEventListener('click', function(){
+    if(!history.length) return;
+    var lines = ['Codice;Formato;Trovato;Descrizione;Ora'];
+    history.forEach(function(h){
+      var row = [h.code, h.format||'', h.matched ? 'si' : 'no', (h.description||'').replace(/;/g,','), new Date(h.ts).toLocaleString('it-IT')];
+      lines.push(row.join(';'));
+    });
+    var blob = new Blob(['﻿' + lines.join('\n')], {type:'text/csv;charset=utf-8'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'scansioni_teamwear_' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- manual entry ----------
+  el('btnManual').addEventListener('click', submitManual);
+  el('manualInput').addEventListener('keydown', function(e){ if(e.key === 'Enter') submitManual(); });
+  function submitManual(){
+    var v = el('manualInput').value.trim();
+    if(!v) return;
+    handleCode(v, 'manuale');
+    el('manualInput').value = '';
+  }
+
+  // ---------- camera scanning ----------
+  var btnStart = el('btnStart'), btnStop = el('btnStop'), cameraSelect = el('cameraSelect'), btnTorch = el('btnTorch');
+  var FORMATS = (window.Html5QrcodeSupportedFormats) ? [
+    Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.CODABAR,
+    Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.DATA_MATRIX, Html5QrcodeSupportedFormats.AZTEC,
+    Html5QrcodeSupportedFormats.PDF_417
+  ] : undefined;
+
+  function populateCameras(){
+    if(typeof Html5Qrcode === 'undefined') return;
+    Html5Qrcode.getCameras().then(function(devices){
+      if(!devices || !devices.length){
+        cameraSelect.innerHTML = '<option>Nessuna fotocamera trovata</option>';
+        return;
+      }
+      cameraSelect.innerHTML = '';
+      devices.forEach(function(d, i){
+        var opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.label || ('Fotocamera ' + (i+1));
+        cameraSelect.appendChild(opt);
+      });
+      // prefer a rear/back camera by label if present
+      var back = devices.find(function(d){ return /back|rear|environment/i.test(d.label||''); });
+      if(back) cameraSelect.value = back.id;
+      cameraSelect.disabled = false;
+    }).catch(function(){
+      cameraSelect.innerHTML = '<option>Permesso fotocamera negato</option>';
+    });
+  }
+
+  function startScanning(){
+    if(scanning) return;
+    scanner = new Html5Qrcode('reader', { formatsToSupport: FORMATS, verbose:false });
+    var cameraId = cameraSelect.value || { facingMode: 'environment' };
+    scanner.start(
+      cameraId,
+      { fps: 10, qrbox: function(vw, vh){ var size = Math.floor(Math.min(vw, vh) * 0.7); return { width: size, height: size }; } },
+      function onSuccess(decodedText, result){
+        var fmt = result && result.result && result.result.format && result.result.format.formatName;
+        handleCode(decodedText, fmt);
+      },
+      function onError(){ /* per-frame decode miss — expected constantly, ignore */ }
+    ).then(function(){
+      scanning = true;
+      scanPlaceholder.style.display = 'none';
+      scanFrame.classList.add('active');
+      btnStart.disabled = true; btnStop.disabled = false;
+      try{
+        var track = scanner.getRunningTrackCapabilities ? null : null;
+        var videoTrack = scanner._localMediaStream ? scanner._localMediaStream.getVideoTracks()[0] : null;
+        currentTrack = videoTrack;
+        var caps = videoTrack && videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        btnTorch.disabled = !(caps && caps.torch);
+      }catch(e){ btnTorch.disabled = true; }
+    }).catch(function(err){
+      scanPlaceholder.querySelector('span').textContent = 'Impossibile accedere alla fotocamera — controlla i permessi del browser.';
+      scanPlaceholder.style.display = 'flex';
+    });
+  }
+
+  function stopScanning(){
+    if(!scanner || !scanning) return;
+    scanner.stop().then(function(){
+      scanner.clear();
+      scanning = false;
+      scanFrame.classList.remove('active');
+      scanPlaceholder.style.display = 'flex';
+      scanPlaceholder.querySelector('span').textContent = 'Fotocamera spenta — premi "Avvia scansione"';
+      btnStart.disabled = false; btnStop.disabled = true; btnTorch.disabled = true;
+    }).catch(function(){});
+  }
+
+  btnStart.addEventListener('click', startScanning);
+  btnStop.addEventListener('click', stopScanning);
+  cameraSelect.addEventListener('change', function(){ if(scanning){ stopScanning(); setTimeout(startScanning, 250); } });
+  btnTorch.addEventListener('click', function(){
+    if(!currentTrack) return;
+    var caps = currentTrack.getCapabilities ? currentTrack.getCapabilities() : {};
+    if(!caps.torch) return;
+    var settings = currentTrack.getSettings ? currentTrack.getSettings() : {};
+    currentTrack.applyConstraints({ advanced: [{ torch: !settings.torch }] }).catch(function(){});
+  });
+
+  // ---------- init ----------
+  loadCatalog();
+  loadHistory();
+  refreshCatalogBadge();
+  if(window.isSecureContext === false){
+    scanPlaceholder.querySelector('span').textContent = 'Questa pagina non è in un contesto sicuro (serve HTTPS): la fotocamera e l\'installazione come app potrebbero non funzionare.';
+  }
+  if('serviceWorker' in navigator && window.isSecureContext){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('service-worker.js').catch(function(){ /* offline cache non disponibile, l'app funziona comunque online */ });
+    });
+  }
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    navigator.mediaDevices.getUserMedia({video:true}).then(function(s){
+      s.getTracks().forEach(function(t){ t.stop(); });
+      populateCameras();
+    }).catch(function(){
+      cameraSelect.innerHTML = '<option>Permesso fotocamera non concesso</option>';
+    });
+  }
+})();
+</script>
+</body>
+</html>
