@@ -251,13 +251,16 @@
 
   <section>
     <h2>Catalogo articoli <span class="count" id="catalogCount"></span></h2>
+    <div class="limits" style="margin-bottom:12px">
+      Il listino Joma (36.703 articoli, EAN 2026) è <strong>precaricato nell'app</strong> — niente da importare, resta anche se svuoti il catalogo qui sotto. Il CSV che importi è un secondo livello sopra, tuo e operativo: se un codice esiste in entrambi, vince sempre il tuo import (è quello con la giacenza reale e il tuo prezzo di vendita).
+    </div>
     <label class="drop" id="dropZone">
-      <div class="big">Importa catalogo da CSV</div>
+      <div class="big">Importa il tuo catalogo da CSV</div>
       <div>esportato da Danea Easyfatt (Anagrafica Articoli → Esporta tabella) — trascina il file qui o tocca per scegliere</div>
       <input type="file" id="fileInput" accept=".csv,text/csv">
     </label>
     <div class="section-actions">
-      <button class="ghost" id="btnClearCatalog">Svuota catalogo</button>
+      <button class="ghost" id="btnClearCatalog">Svuota il tuo catalogo importato</button>
     </div>
     <details style="margin-top:12px">
       <summary>Come esportare il catalogo da Easyfatt</summary>
@@ -266,6 +269,17 @@
         <ul>
           <li>Lo scanner riconosce da solo le colonne più comuni (barcode/EAN, codice articolo, descrizione, prezzo, giacenza, taglia/colore, UdM, ubicazione) in italiano o inglese.</li>
           <li>Il file resta <strong>solo nel tuo browser</strong>: non viene inviato a nessun server. Riimportalo quando il catalogo cambia.</li>
+        </ul>
+      </div>
+    </details>
+    <details style="margin-top:10px">
+      <summary>Cosa c'è (e cosa manca) nel listino Joma precaricato</summary>
+      <div class="body">
+        Dati presi dal file <code>EAN_2026_CORRETTO.xlsx</code> che mi hai dato l'11/10/2026: codice articolo, descrizione, taglia, colore e <strong>PVP</strong> (prezzo di vendita al pubblico consigliato da Joma — non il tuo prezzo, non il tuo costo).
+        <ul>
+          <li><strong>Nessuna giacenza</strong>: è un listino fornitore, non il tuo magazzino.</li>
+          <li><strong>Non si aggiorna da solo</strong>: se Joma cambia il listino, questo resta quello di oggi finché non me ne dai uno nuovo da ricaricare nell'app.</li>
+          <li>Copre solo Joma — Macron, Erreà e Top-Tex non sono qui, a meno che tu non me ne passi i listini EAN allo stesso modo.</li>
         </ul>
       </div>
     </details>
@@ -314,8 +328,11 @@
   'use strict';
 
   // ---------- state ----------
-  var catalog = new Map();      // normalized code -> record
-  var catalogRows = 0;
+  var catalogImported = new Map();  // normalized code -> record, dal CSV importato dall'utente
+  var catalogImportedRows = 0;
+  var catalogJoma = new Map();      // normalized code -> record, dal listino Joma precaricato nell'app
+  var catalogJomaRows = 0;
+  var catalogJomaStatus = 'idle';   // idle | loading | ready | error
   var history = [];             // {code, format, matched, description, ts, loaded}
   var loadedItems = [];         // righe caricate, struttura "Import Danea Inventario"
   var scanner = null;
@@ -336,7 +353,7 @@
   function saveCatalog(){
     try{
       var arr = [];
-      catalog.forEach(function(v){ arr.push(v); });
+      catalogImported.forEach(function(v){ arr.push(v); });
       localStorage.setItem('tw_catalog', JSON.stringify(arr));
     }catch(e){ /* storage unavailable: catalog just stays in-memory for this session */ }
   }
@@ -345,7 +362,7 @@
       var raw = localStorage.getItem('tw_catalog');
       if(!raw) return;
       var arr = JSON.parse(raw);
-      arr.forEach(function(rec){ indexRecord(rec); });
+      arr.forEach(function(rec){ indexRecord(rec, catalogImported); catalogImportedRows++; });
       refreshCatalogBadge();
     }catch(e){ /* ignore */ }
   }
@@ -381,22 +398,62 @@
   // ---------- catalog indexing ----------
   function normCode(s){ return (s||'').toString().trim().replace(/\s+/g,''); }
 
-  function indexRecord(rec){
-    catalogRows++;
-    if(rec.barcode) catalog.set(normCode(rec.barcode), rec);
-    if(rec.articleCode) catalog.set(normCode(rec.articleCode), rec);
+  function indexRecord(rec, map){
+    if(rec.barcode) map.set(normCode(rec.barcode), rec);
+    if(rec.articleCode) map.set(normCode(rec.articleCode), rec);
+  }
+
+  // il catalogo importato (dati tuoi, operativi) ha sempre priorità sul listino Joma precaricato
+  function lookupCode(key){
+    return catalogImported.get(key) || catalogJoma.get(key);
   }
 
   function refreshCatalogBadge(){
-    var n = catalogRows;
-    catalogCount.textContent = n ? ('(' + n + ' articoli)') : '';
-    if(n > 0){
+    var parts = [];
+    if(catalogJomaStatus === 'loading') parts.push('listino Joma in caricamento…');
+    else if(catalogJomaRows > 0) parts.push(catalogJomaRows.toLocaleString('it-IT') + ' Joma');
+    else if(catalogJomaStatus === 'error') parts.push('listino Joma non disponibile');
+    if(catalogImportedRows > 0) parts.push(catalogImportedRows.toLocaleString('it-IT') + ' tuoi');
+
+    var total = catalogJomaRows + catalogImportedRows;
+    catalogCount.textContent = total ? ('(' + total.toLocaleString('it-IT') + ' articoli)') : '';
+    if(parts.length){
       catalogBadge.classList.add('has-data');
-      catalogBadgeText.textContent = n + ' articoli caricati';
+      catalogBadgeText.textContent = parts.join(' + ');
     } else {
       catalogBadge.classList.remove('has-data');
       catalogBadgeText.textContent = 'catalogo vuoto';
     }
+  }
+
+  // ---------- listino Joma precaricato (memorizzato nell'app, non nel browser dell'utente) ----------
+  function loadJomaCatalog(){
+    catalogJomaStatus = 'loading';
+    refreshCatalogBadge();
+    fetch('data/joma-catalog.json')
+      .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
+      .then(function(arr){
+        arr.forEach(function(r){
+          var variant = [r.s, r.c].filter(Boolean).join(' - ');
+          var rec = {
+            barcode: r.b,
+            articleCode: r.a,
+            description: r.d,
+            variant: variant,
+            price: (r.p === '' || r.p === undefined) ? '' : r.p,
+            stock: '',
+            source: 'joma'
+          };
+          indexRecord(rec, catalogJoma);
+        });
+        catalogJomaRows = arr.length;
+        catalogJomaStatus = 'ready';
+        refreshCatalogBadge();
+      })
+      .catch(function(){
+        catalogJomaStatus = 'error';
+        refreshCatalogBadge();
+      });
   }
 
   // ---------- tiny CSV parser (handles quoted fields, , or ; delimiter) ----------
@@ -460,9 +517,10 @@
         if(key) rec[key] = (line[idx] || '').trim();
       });
       if(!rec.barcode && !rec.articleCode) continue;
-      indexRecord(rec);
+      indexRecord(rec, catalogImported);
       added++;
     }
+    catalogImportedRows += added;
     saveCatalog();
     refreshCatalogBadge();
     resNote.textContent = '';
@@ -498,7 +556,7 @@
     reader.readAsText(f, 'utf-8');
   }
   el('btnClearCatalog').addEventListener('click', function(){
-    catalog = new Map(); catalogRows = 0;
+    catalogImported = new Map(); catalogImportedRows = 0;
     try{ localStorage.removeItem('tw_catalog'); }catch(e){}
     refreshCatalogBadge();
   });
@@ -514,7 +572,7 @@
     if(navigator.vibrate) navigator.vibrate(60);
 
     var key = normCode(code);
-    var rec = catalog.get(key);
+    var rec = lookupCode(key);
     currentCode = code; currentRec = rec;
 
     resultBox.classList.add('show');
@@ -541,16 +599,22 @@
       addField('Codice articolo', rec.articleCode || '—');
       addField('Descrizione', rec.description || '—');
       if(rec.variant) addField('Taglia/Colore', rec.variant);
-      if(rec.price) addField('Prezzo', rec.price);
+      if(rec.price !== '' && rec.price !== undefined && rec.price !== null){
+        addField(rec.source === 'joma' ? 'PVP listino Joma' : 'Prezzo', rec.price);
+      }
       if(rec.stock) addField('Giacenza Easyfatt', rec.stock);
+      addField('Fonte', rec.source === 'joma' ? 'Listino Joma precaricato' : 'Catalogo importato (tuo)');
       if(format) addField('Formato', format);
+      if(rec.source === 'joma'){
+        resNote.textContent = 'Prezzo = listino pubblico Joma, non il tuo prezzo di vendita. Nessuna giacenza: il listino fornitore non contiene la tua disponibilità.';
+      }
     } else {
       resStatus.textContent = 'non trovato';
       resStatus.className = 'result-status miss';
       addField('Formato', format || '—');
-      resNote.textContent = catalogRows
-        ? 'Codice non presente nel catalogo importato. Potrebbe essere un articolo nuovo o il catalogo potrebbe essere vecchio — ricontrolla su Easyfatt.'
-        : 'Nessun catalogo caricato: importa il CSV qui sotto per far riconoscere gli articoli.';
+      resNote.textContent = (catalogJomaRows + catalogImportedRows)
+        ? 'Codice non presente nei cataloghi disponibili. Potrebbe essere un articolo nuovo, di un altro fornitore, o un catalogo da riaggiornare.'
+        : 'Nessun catalogo disponibile: importa il CSV qui sotto per far riconoscere gli articoli.';
     }
   }
 
@@ -767,6 +831,7 @@
 
   // ---------- init ----------
   loadCatalog();
+  loadJomaCatalog();
   loadHistory();
   loadLoaded();
   refreshCatalogBadge();
