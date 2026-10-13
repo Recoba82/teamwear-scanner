@@ -142,6 +142,16 @@
   .load-confirm{ font-size:12px; color:var(--ok); font-weight:600; align-self:center; opacity:0; transition:opacity .2s; white-space:nowrap; }
   .load-confirm.show{ opacity:1; }
 
+  .new-row{ display:none; align-items:flex-end; gap:8px; margin-top:14px; padding-top:14px; border-top:1px dashed var(--bad); flex-wrap:wrap; }
+  .new-row.show{ display:flex; }
+  .new-row .new-hint{ flex:1 1 100%; font-size:12px; color:var(--bad); margin:0 0 2px; font-weight:600; }
+  .new-field{ display:flex; flex-direction:column; gap:4px; flex:1 1 140px; min-width:110px; }
+  .new-field label{ font-size:11px; color:var(--fg-faint); text-transform:uppercase; letter-spacing:.04em; }
+  .new-field input{ width:100%; }
+  .new-field.small{ flex:0 0 84px; min-width:70px; }
+  #btnNuovo{ flex-shrink:0; background:var(--bad); color:#fff; border-color:var(--bad); }
+  #btnNuovo:hover{ background:#e87070; }
+
   .export-count{ font-family:var(--font-mono); font-size:13px; color:var(--fg-dim); margin-bottom:12px; }
   .export-count strong{ color:var(--fg); font-size:20px; font-variant-numeric:tabular-nums; }
   #btnTermina{ flex:1; min-width:180px; }
@@ -180,6 +190,7 @@
   .history-row .hdesc{ color:var(--fg-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
   .history-row .htime{ color:var(--fg-faint); font-family:var(--font-mono); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
   .history-row .hloaded{ flex-shrink:0; color:var(--ok); font-size:13px; width:14px; text-align:center; }
+  .history-row .hnew{ flex-shrink:0; color:var(--bad); font-size:13px; width:14px; text-align:center; font-weight:700; }
   .empty{ color:var(--fg-faint); font-size:13px; padding:8px 0; }
 
   .section-actions{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
@@ -247,6 +258,27 @@
       <button class="primary" id="btnCarica">Carica</button>
       <span class="load-confirm" id="loadConfirm">✓ caricato</span>
     </div>
+    <div class="new-row" id="newRow">
+      <div class="new-hint">Non trovato in nessun catalogo — compila a mano e salva come articolo nuovo</div>
+      <div class="new-field">
+        <label for="newCod">Codice articolo</label>
+        <input type="text" id="newCod" placeholder="es. ABC123" autocomplete="off">
+      </div>
+      <div class="new-field">
+        <label for="newDesc">Descrizione</label>
+        <input type="text" id="newDesc" placeholder="es. Pallone allenamento" autocomplete="off">
+      </div>
+      <div class="new-field small">
+        <label for="newTaglia">Taglia</label>
+        <input type="text" id="newTaglia" placeholder="es. M" autocomplete="off">
+      </div>
+      <div class="new-field small">
+        <label for="newColore">Colore</label>
+        <input type="text" id="newColore" placeholder="es. Blu" autocomplete="off">
+      </div>
+      <button class="primary" id="btnNuovo">Nuovo</button>
+      <span class="load-confirm" id="newConfirm">✓ salvato</span>
+    </div>
   </div>
 
   <section>
@@ -313,6 +345,25 @@
   </section>
 
   <section>
+    <h2>Articoli nuovi — non in catalogo</h2>
+    <div class="export-count"><strong id="newItemsCount">0</strong> articoli nuovi salvati, pronti per l'esportazione</div>
+    <div class="section-actions">
+      <button class="ghost" id="btnExportNew" disabled>Scarica di nuovo — Nuovi Articoli.xlsx</button>
+      <button class="ghost" id="btnClearNew" disabled>Svuota nuovi articoli</button>
+    </div>
+    <details style="margin-top:12px">
+      <summary>Come funziona</summary>
+      <div class="body">
+        Quando scansioni un codice non presente in nessun catalogo, compaiono i campi <strong>Codice articolo, Descrizione, Taglia, Colore</strong> da compilare a mano. Premi <strong>Nuovo</strong>: la riga (con anche il codice a barre scansionato) si aggiunge alla lista qui sotto e scarica subito <code>Nuovi Articoli.xlsx</code> con tutte le righe salvate finora.
+        <ul>
+          <li><strong>Attenzione al download:</strong> ad ogni "Nuovo" il browser scarica di nuovo il file con lo stesso nome — se li tieni tutti, ti ritrovi <code>Nuovi Articoli.xlsx</code>, <code>Nuovi Articoli (1).xlsx</code>, <code>(2).xlsx</code> e così via: è un comportamento standard del browser, non evitabile da qui. L'ultimo scaricato è sempre quello completo e aggiornato.</li>
+          <li>I dati restano salvati in questo browser finché non premi "Svuota nuovi articoli", cosi puoi scaricare di nuovo con "Scarica di nuovo" senza dover ripassare ogni codice.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <section>
     <h2>Limiti — leggi prima di usarlo in negozio</h2>
     <div class="limits">
       Questo scanner <strong>non è collegato in diretta a Danea Easyfatt</strong>: Easyfatt è un gestionale desktop e non espone un'API pubblica interrogabile da un'app web. Il confronto avviene contro lo <strong>snapshot CSV</strong> che importi sopra, tenuto solo nella memoria di questo browser. Se aggiungi o modifichi articoli in Easyfatt, il catalogo qui resta vecchio finché non re-importi il file. Il file Excel che generi con "Termina" va importato in Easyfatt manualmente — non c'è un canale automatico di scrittura. Nessun dato esce da questo dispositivo.
@@ -333,8 +384,9 @@
   var catalogJoma = new Map();      // normalized code -> record, dal listino Joma precaricato nell'app
   var catalogJomaRows = 0;
   var catalogJomaStatus = 'idle';   // idle | loading | ready | error
-  var history = [];             // {code, format, matched, description, ts, loaded}
+  var history = [];             // {code, format, matched, description, ts, loaded, isNew}
   var loadedItems = [];         // righe caricate, struttura "Import Danea Inventario"
+  var newItems = [];            // articoli non trovati nei cataloghi, compilati a mano, esportati in "Nuovi Articoli.xlsx"
   var scanner = null;
   var scanning = false;
   var lastCode = null, lastCodeAt = 0;
@@ -348,6 +400,9 @@
   var scanFrame = el('scanFrame'), scanPlaceholder = el('scanPlaceholder');
   var loadUbicazione = el('loadUbicazione'), loadQty = el('loadQty'), btnCarica = el('btnCarica'), loadConfirm = el('loadConfirm');
   var loadedCountEl = el('loadedCount'), btnTermina = el('btnTermina'), btnClearLoaded = el('btnClearLoaded');
+  var newRow = el('newRow'), newCod = el('newCod'), newDesc = el('newDesc'), newTaglia = el('newTaglia'), newColore = el('newColore');
+  var btnNuovo = el('btnNuovo'), newConfirm = el('newConfirm');
+  var newItemsCountEl = el('newItemsCount'), btnExportNew = el('btnExportNew'), btnClearNew = el('btnClearNew');
 
   // ---------- storage (best-effort, never required) ----------
   function saveCatalog(){
@@ -393,6 +448,23 @@
     var has = loadedItems.length > 0;
     btnTermina.disabled = !has;
     btnClearLoaded.disabled = !has;
+  }
+  function saveNew(){
+    try{ localStorage.setItem('tw_new_items', JSON.stringify(newItems)); }catch(e){}
+  }
+  function loadNew(){
+    try{
+      var raw = localStorage.getItem('tw_new_items');
+      if(!raw) return;
+      newItems = JSON.parse(raw);
+      refreshNewBadge();
+    }catch(e){}
+  }
+  function refreshNewBadge(){
+    newItemsCountEl.textContent = newItems.length;
+    var has = newItems.length > 0;
+    btnExportNew.disabled = !has;
+    btnClearNew.disabled = !has;
   }
 
   // ---------- catalog indexing ----------
@@ -579,7 +651,7 @@
     resCode.textContent = code;
     resFields.innerHTML = '';
 
-    var entry = { code: code, format: format || '', matched: !!rec, description: rec ? (rec.description||'') : '', ts: now, loaded: false };
+    var entry = { code: code, format: format || '', matched: !!rec, description: rec ? (rec.description||'') : '', ts: now, loaded: false, isNew: false };
     currentEntry = entry;
     history.unshift(entry);
     history = history.slice(0, 500);
@@ -608,6 +680,7 @@
       if(rec.source === 'joma'){
         resNote.textContent = 'Prezzo = listino pubblico Joma, non il tuo prezzo di vendita. Nessuna giacenza: il listino fornitore non contiene la tua disponibilità.';
       }
+      newRow.classList.remove('show');
     } else {
       resStatus.textContent = 'non trovato';
       resStatus.className = 'result-status miss';
@@ -615,6 +688,9 @@
       resNote.textContent = (catalogJomaRows + catalogImportedRows)
         ? 'Codice non presente nei cataloghi disponibili. Potrebbe essere un articolo nuovo, di un altro fornitore, o un catalogo da riaggiornare.'
         : 'Nessun catalogo disponibile: importa il CSV qui sotto per far riconoscere gli articoli.';
+      newCod.value = ''; newDesc.value = ''; newTaglia.value = ''; newColore.value = '';
+      newConfirm.classList.remove('show');
+      newRow.classList.add('show');
     }
   }
 
@@ -637,9 +713,10 @@
       var code = document.createElement('span'); code.className = 'hcode'; code.textContent = h.code;
       var desc = document.createElement('span'); desc.className = 'hdesc'; desc.textContent = h.description || (h.matched ? '' : 'non trovato');
       var loaded = document.createElement('span'); loaded.className = 'hloaded'; loaded.textContent = h.loaded ? '✓' : ''; loaded.title = h.loaded ? 'Caricato per l\'export' : '';
+      var isNewEl = document.createElement('span'); isNewEl.className = 'hnew'; isNewEl.textContent = h.isNew ? '+' : ''; isNewEl.title = h.isNew ? 'Salvato in Nuovi Articoli' : '';
       var time = document.createElement('span'); time.className = 'htime';
       time.textContent = new Date(h.ts).toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-      row.appendChild(dot); row.appendChild(code); row.appendChild(desc); row.appendChild(loaded); row.appendChild(time);
+      row.appendChild(dot); row.appendChild(code); row.appendChild(desc); row.appendChild(loaded); row.appendChild(isNewEl); row.appendChild(time);
       historyList.appendChild(row);
     });
   }
@@ -668,6 +745,10 @@
   // ---------- caricamento inventario (struttura "Import Danea Inventario") ----------
   var INVENTORY_HEADERS = ['Ubicazione','Cod.','Descrizione','Cod. a barre','Taglia/Colore','Udm','Giacenza Easyfatt','Giacenza effettiva'];
   var INVENTORY_COL_WIDTHS = [12.71, 19.71, 61.14, 26.71, 30.71, 6.71, 18.71, 19.71];
+
+  // ---------- articoli nuovi (non trovati in nessun catalogo) ----------
+  var NEW_ITEMS_HEADERS = ['Cod. a barre', 'Cod. articolo', 'Descrizione', 'Taglia', 'Colore'];
+  var NEW_ITEMS_COL_WIDTHS = [26.71, 19.71, 48, 14, 16];
 
   function numOrBlank(v){
     if(v === undefined || v === null || v === '') return '';
@@ -731,6 +812,54 @@
     a.href = url; a.download = dd + '-' + mm + '-' + yyyy + '.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  });
+
+  btnNuovo.addEventListener('click', function(){
+    if(currentCode === null) return;
+    var cod = newCod.value.trim(), desc = newDesc.value.trim(), taglia = newTaglia.value.trim(), colore = newColore.value.trim();
+    if(!cod && !desc && !taglia && !colore) return; // niente da salvare, non scaricare per niente
+
+    newItems.push({ barcode: currentCode, cod: cod, descrizione: desc, taglia: taglia, colore: colore });
+    saveNew();
+    refreshNewBadge();
+
+    if(currentEntry){ currentEntry.isNew = true; renderHistory(); }
+
+    exportNewItems();
+
+    newConfirm.classList.add('show');
+    setTimeout(function(){ newConfirm.classList.remove('show'); }, 1500);
+  });
+
+  function exportNewItems(){
+    if(!newItems.length) return;
+    if(typeof XLSX === 'undefined'){
+      alertish('Libreria Excel non disponibile offline al primo avvio: apri l\'app una volta online, poi riprova.');
+      return;
+    }
+    var data = [NEW_ITEMS_HEADERS];
+    newItems.forEach(function(it){
+      data.push([it.barcode, it.cod, it.descrizione, it.taglia, it.colore]);
+    });
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = NEW_ITEMS_COL_WIDTHS.map(function(w){ return { wch: w }; });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Nuovi Articoli');
+    var wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    var blob = new Blob([wbout], { type: 'application/octet-stream' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'Nuovi Articoli.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  btnExportNew.addEventListener('click', exportNewItems);
+
+  btnClearNew.addEventListener('click', function(){
+    newItems = [];
+    try{ localStorage.removeItem('tw_new_items'); }catch(e){}
+    refreshNewBadge();
   });
 
   // ---------- manual entry ----------
@@ -834,8 +963,10 @@
   loadJomaCatalog();
   loadHistory();
   loadLoaded();
+  loadNew();
   refreshCatalogBadge();
   refreshLoadedBadge();
+  refreshNewBadge();
   if(window.isSecureContext === false){
     scanPlaceholder.querySelector('span').textContent = 'Questa pagina non è in un contesto sicuro (serve HTTPS): la fotocamera e l\'installazione come app potrebbero non funzionare.';
   }
