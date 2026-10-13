@@ -151,6 +151,9 @@
   .new-field.small{ flex:0 0 84px; min-width:70px; }
   #btnNuovo{ flex-shrink:0; background:var(--bad); color:#fff; border-color:var(--bad); }
   #btnNuovo:hover{ background:#e87070; }
+  #btnExportNew{ background:rgb(10,96,197); color:#fff; border-color:rgb(10,96,197); }
+  #btnExportNew:hover{ background:rgb(24,112,214); }
+  #btnExportNew:disabled{ background:rgb(10,96,197); opacity:.45; }
 
   .export-count{ font-family:var(--font-mono); font-size:13px; color:var(--fg-dim); margin-bottom:12px; }
   .export-count strong{ color:var(--fg); font-size:20px; font-variant-numeric:tabular-nums; }
@@ -261,6 +264,10 @@
     <div class="new-row" id="newRow">
       <div class="new-hint">Non trovato in nessun catalogo — compila a mano e salva come articolo nuovo</div>
       <div class="new-field">
+        <label for="newFornitore">Fornitore</label>
+        <input type="text" id="newFornitore" placeholder="es. Joma" autocomplete="off">
+      </div>
+      <div class="new-field">
         <label for="newCod">Codice articolo</label>
         <input type="text" id="newCod" placeholder="es. ABC123" autocomplete="off">
       </div>
@@ -348,16 +355,16 @@
     <h2>Articoli nuovi — non in catalogo</h2>
     <div class="export-count"><strong id="newItemsCount">0</strong> articoli nuovi salvati, pronti per l'esportazione</div>
     <div class="section-actions">
-      <button class="ghost" id="btnExportNew" disabled>Scarica di nuovo — Nuovi Articoli.xlsx</button>
+      <button class="primary" id="btnExportNew" disabled>Scarica Nuovi Articoli</button>
       <button class="ghost" id="btnClearNew" disabled>Svuota nuovi articoli</button>
     </div>
     <details style="margin-top:12px">
       <summary>Come funziona</summary>
       <div class="body">
-        Quando scansioni un codice non presente in nessun catalogo, compaiono i campi <strong>Codice articolo, Descrizione, Taglia, Colore</strong> da compilare a mano. Premi <strong>Nuovo</strong>: la riga (con anche il codice a barre scansionato) si aggiunge alla lista qui sotto e scarica subito <code>Nuovi Articoli.xlsx</code> con tutte le righe salvate finora.
+        Quando scansioni un codice non presente in nessun catalogo, compaiono i campi <strong>Fornitore, Codice articolo, Descrizione, Taglia, Colore</strong> da compilare a mano. Premi <strong>Nuovo</strong>: la riga (con anche il codice a barre scansionato) si aggiunge alla lista in memoria — nessun download a questo punto. Quando hai finito il giro, premi <strong>Scarica Nuovi Articoli</strong>: scarica <code>Nuovi Articoli.xlsx</code> con tutte le righe salvate finora.
         <ul>
-          <li><strong>Attenzione al download:</strong> ad ogni "Nuovo" il browser scarica di nuovo il file con lo stesso nome — se li tieni tutti, ti ritrovi <code>Nuovi Articoli.xlsx</code>, <code>Nuovi Articoli (1).xlsx</code>, <code>(2).xlsx</code> e così via: è un comportamento standard del browser, non evitabile da qui. L'ultimo scaricato è sempre quello completo e aggiornato.</li>
-          <li>I dati restano salvati in questo browser finché non premi "Svuota nuovi articoli", cosi puoi scaricare di nuovo con "Scarica di nuovo" senza dover ripassare ogni codice.</li>
+          <li>I dati restano salvati in questo browser finché non premi "Svuota nuovi articoli", cosi puoi tornare più tardi e scaricare di nuovo senza dover ripassare ogni codice.</li>
+          <li>Se premi "Scarica Nuovi Articoli" più di una volta senza svuotare, il browser crea copie con lo stesso nome (<code>Nuovi Articoli (1).xlsx</code>…) — comportamento standard del browser, non evitabile da qui.</li>
         </ul>
       </div>
     </details>
@@ -400,7 +407,7 @@
   var scanFrame = el('scanFrame'), scanPlaceholder = el('scanPlaceholder');
   var loadUbicazione = el('loadUbicazione'), loadQty = el('loadQty'), btnCarica = el('btnCarica'), loadConfirm = el('loadConfirm');
   var loadedCountEl = el('loadedCount'), btnTermina = el('btnTermina'), btnClearLoaded = el('btnClearLoaded');
-  var newRow = el('newRow'), newCod = el('newCod'), newDesc = el('newDesc'), newTaglia = el('newTaglia'), newColore = el('newColore');
+  var newRow = el('newRow'), newFornitore = el('newFornitore'), newCod = el('newCod'), newDesc = el('newDesc'), newTaglia = el('newTaglia'), newColore = el('newColore');
   var btnNuovo = el('btnNuovo'), newConfirm = el('newConfirm');
   var newItemsCountEl = el('newItemsCount'), btnExportNew = el('btnExportNew'), btnClearNew = el('btnClearNew');
 
@@ -688,7 +695,7 @@
       resNote.textContent = (catalogJomaRows + catalogImportedRows)
         ? 'Codice non presente nei cataloghi disponibili. Potrebbe essere un articolo nuovo, di un altro fornitore, o un catalogo da riaggiornare.'
         : 'Nessun catalogo disponibile: importa il CSV qui sotto per far riconoscere gli articoli.';
-      newCod.value = ''; newDesc.value = ''; newTaglia.value = ''; newColore.value = '';
+      newFornitore.value = ''; newCod.value = ''; newDesc.value = ''; newTaglia.value = ''; newColore.value = '';
       newConfirm.classList.remove('show');
       newRow.classList.add('show');
     }
@@ -747,8 +754,8 @@
   var INVENTORY_COL_WIDTHS = [12.71, 19.71, 61.14, 26.71, 30.71, 6.71, 18.71, 19.71];
 
   // ---------- articoli nuovi (non trovati in nessun catalogo) ----------
-  var NEW_ITEMS_HEADERS = ['Cod. a barre', 'Cod. articolo', 'Descrizione', 'Taglia', 'Colore'];
-  var NEW_ITEMS_COL_WIDTHS = [26.71, 19.71, 48, 14, 16];
+  var NEW_ITEMS_HEADERS = ['Cod. a barre', 'Fornitore', 'Cod. articolo', 'Descrizione', 'Taglia', 'Colore'];
+  var NEW_ITEMS_COL_WIDTHS = [26.71, 18, 19.71, 48, 14, 16];
 
   function numOrBlank(v){
     if(v === undefined || v === null || v === '') return '';
@@ -816,16 +823,14 @@
 
   btnNuovo.addEventListener('click', function(){
     if(currentCode === null) return;
-    var cod = newCod.value.trim(), desc = newDesc.value.trim(), taglia = newTaglia.value.trim(), colore = newColore.value.trim();
-    if(!cod && !desc && !taglia && !colore) return; // niente da salvare, non scaricare per niente
+    var fornitore = newFornitore.value.trim(), cod = newCod.value.trim(), desc = newDesc.value.trim(), taglia = newTaglia.value.trim(), colore = newColore.value.trim();
+    if(!fornitore && !cod && !desc && !taglia && !colore) return; // niente da salvare
 
-    newItems.push({ barcode: currentCode, cod: cod, descrizione: desc, taglia: taglia, colore: colore });
+    newItems.push({ barcode: currentCode, fornitore: fornitore, cod: cod, descrizione: desc, taglia: taglia, colore: colore });
     saveNew();
     refreshNewBadge();
 
     if(currentEntry){ currentEntry.isNew = true; renderHistory(); }
-
-    exportNewItems();
 
     newConfirm.classList.add('show');
     setTimeout(function(){ newConfirm.classList.remove('show'); }, 1500);
@@ -839,7 +844,7 @@
     }
     var data = [NEW_ITEMS_HEADERS];
     newItems.forEach(function(it){
-      data.push([it.barcode, it.cod, it.descrizione, it.taglia, it.colore]);
+      data.push([it.barcode, it.fornitore, it.cod, it.descrizione, it.taglia, it.colore]);
     });
     var ws = XLSX.utils.aoa_to_sheet(data);
     ws['!cols'] = NEW_ITEMS_COL_WIDTHS.map(function(w){ return { wch: w }; });
