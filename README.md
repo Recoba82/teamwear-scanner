@@ -4,6 +4,7 @@ Scanner barcode/QR per articoli TeamWear, installabile come PWA su Android (e iO
 
 - Legge EAN-13/8, UPC, Code128/39/93, Codabar, ITF, QR, Data Matrix, Aztec, PDF417 dalla fotocamera.
 - Confronta ogni codice con un catalogo importato via CSV (esportato da Danea Easyfatt — nessuna API live disponibile, vedi sezione "Limiti" nell'app).
+- Precarica nell'app, senza bisogno di importare nulla: Joma, Top-Tex, Kappa, un catalogo fornitore generico (Teamwear 25P), Errea e Macron (questi ultimi due senza codice a barre, solo ricerca manuale). Il tuo CSV importato ha sempre priorità su tutti questi.
 - Ad ogni scansione puoi impostare Ubicazione e Quantità e premere **Carica** per tenere la riga in memoria.
 - **Termina** genera un file `.xlsx` con la data odierna, nella stessa struttura del file "Import Danea Inventario" (Ubicazione, Cod., Descrizione, Cod. a barre, Taglia/Colore, Udm, Giacenza Easyfatt, Giacenza effettiva), pronto per il reimport manuale in Easyfatt.
 - Elaborazione 100% locale nel browser: nessun dato lasciato questo repo o inviato a server esterni.

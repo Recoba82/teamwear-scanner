@@ -296,7 +296,7 @@
   <section>
     <h2>Catalogo articoli <span class="count" id="catalogCount"></span></h2>
     <div class="limits" style="margin-bottom:12px">
-      Il listino Joma (36.703 articoli, EAN 2026) è <strong>precaricato nell'app</strong> — niente da importare, resta anche se svuoti il catalogo qui sotto. Il CSV che importi è un secondo livello sopra, tuo e operativo: se un codice esiste in entrambi, vince sempre il tuo import (è quello con la giacenza reale e il tuo prezzo di vendita).
+      Sei listini sono <strong>precaricati nell'app</strong> — niente da importare, restano anche se svuoti il catalogo qui sotto: <strong>Joma</strong> (36.703 articoli, EAN 2026), <strong>Top-Tex</strong> (taglie/colori con EAN), <strong>Kappa</strong> (database articoli con EAN), il tuo <strong>catalogo fornitore generico</strong> (export "Teamwear 25P"), ed <strong>Errea</strong> e <strong>Macron</strong> (dal tuo gestionale — ma senza codice a barre, quindi trovabili solo a mano, non a scansione). Il CSV che importi è un livello sopra a tutti questi, tuo e operativo: se un codice esiste anche lì, vince sempre il tuo import (è quello con la giacenza reale e il tuo prezzo di vendita).
     </div>
     <label class="drop" id="dropZone">
       <div class="big">Importa il tuo catalogo da CSV</div>
@@ -317,14 +317,16 @@
       </div>
     </details>
     <details style="margin-top:10px">
-      <summary>Cosa c'è (e cosa manca) nel listino Joma precaricato</summary>
+      <summary>Cosa c'è (e cosa manca) in ogni listino precaricato</summary>
       <div class="body">
-        Dati presi dal file <code>EAN_2026_CORRETTO.xlsx</code> che mi hai dato l'11/10/2026: codice articolo, descrizione, taglia, colore e <strong>PVP</strong> (prezzo di vendita al pubblico consigliato da Joma — non il tuo prezzo, non il tuo costo).
         <ul>
-          <li><strong>Nessuna giacenza</strong>: è un listino fornitore, non il tuo magazzino.</li>
-          <li><strong>Non si aggiorna da solo</strong>: se Joma cambia il listino, questo resta quello di oggi finché non me ne dai uno nuovo da ricaricare nell'app.</li>
-          <li>Copre solo Joma — Macron, Erreà e Top-Tex non sono qui, a meno che tu non me ne passi i listini EAN allo stesso modo.</li>
+          <li><strong>Joma</strong> — da <code>EAN_2026_CORRETTO.xlsx</code> (11/10/2026): codice, descrizione, taglia, colore, EAN e <strong>PVP</strong> (prezzo pubblico consigliato da Joma, non il tuo prezzo). Nessuna giacenza.</li>
+          <li><strong>Top-Tex</strong> — da <code>ARTICOLI_TOP_TEX_2026.xlsx</code> + <code>ARTICOLI_TOP_TEX_2026_TAGLIE_E_COLORI.xlsx</code> (14/10/2026): codice, descrizione, taglia, colore, EAN e "Listino 1" preso dal tuo gestionale. Nessuna giacenza (è uno snapshot statico).</li>
+          <li><strong>Kappa</strong> — da <code>DABASE_ARTICOLI_KAPPA_2025.xls</code> (14/10/2026): codice, descrizione, taglia, colore, EAN. <strong>Nessun prezzo</strong>: il file aveva due colonne numeriche ambigue (non so distinguere costo da listino) e ho preferito non inventare.</li>
+          <li><strong>Catalogo fornitore Teamwear</strong> — da <code>CATALOGUE_EXPORT_032_013512_TEAMWEAR_25P.xlsx</code> (14/10/2026): codice, nome prodotto, taglia, colore, EAN, prezzo. <strong>Non so se quel prezzo sia un costo d'acquisto o un prezzo di vendita</strong> — verificalo prima di fidartene con un cliente.</li>
+          <li><strong>Errea</strong> e <strong>Macron</strong> — dal tuo export gestionale (14/10/2026): codice, descrizione, "Listino 1". <strong>Senza codice a barre</strong> nei file che mi hai dato: niente scansione, solo ricerca manuale del codice articolo. Nessuna variante taglia/colore indicizzata per lo stesso motivo (non serve a niente senza un EAN che la identifichi).</li>
         </ul>
+        <strong>In comune a tutti:</strong> sono snapshot statici presi il giorno in cui mi hai dato i file — se il fornitore cambia prezzo o articoli, qui restano quelli di allora finché non mi passi un file aggiornato da ricaricare nell'app. Nessuno di questi listini contiene la tua giacenza reale: quella arriva solo dal tuo catalogo importato via CSV.
       </div>
     </details>
   </section>
@@ -393,9 +395,19 @@
   // ---------- state ----------
   var catalogImported = new Map();  // normalized code -> record, dal CSV importato dall'utente
   var catalogImportedRows = 0;
-  var catalogJoma = new Map();      // normalized code -> record, dal listino Joma precaricato nell'app
-  var catalogJomaRows = 0;
-  var catalogJomaStatus = 'idle';   // idle | loading | ready | error
+  var catalogStatic = new Map();    // normalized code -> record, da tutti i listini precaricati nell'app (Joma, Top-Tex, Errea, Macron, Kappa, Teamwear)
+  // un brand per voce: file JSON, etichetta badge, nome sorgente leggibile
+  var STATIC_BRANDS = [
+    { key: 'joma',     file: 'data/joma-catalog.json',     label: 'Joma',     source: 'Listino Joma precaricato' },
+    { key: 'toptex',   file: 'data/toptex-catalog.json',   label: 'Top-Tex',  source: 'Listino Top-Tex precaricato' },
+    { key: 'errea',    file: 'data/errea-catalog.json',    label: 'Errea',    source: 'Listino Errea precaricato' },
+    { key: 'macron',   file: 'data/macron-catalog.json',   label: 'Macron',   source: 'Listino Macron precaricato' },
+    { key: 'kappa',    file: 'data/kappa-catalog.json',    label: 'Kappa',    source: 'Database Kappa precaricato' },
+    { key: 'teamwear', file: 'data/teamwear-catalog.json', label: 'Teamwear', source: 'Catalogo fornitore precaricato' }
+  ];
+  var staticBrandRows = {};    // key -> numero righe caricate
+  var staticBrandStatus = {};  // key -> idle | loading | ready | error
+  STATIC_BRANDS.forEach(function(b){ staticBrandRows[b.key] = 0; staticBrandStatus[b.key] = 'idle'; });
   var history = [];             // {code, format, matched, description, ts, loaded, isNew}
   var loadedItems = [];         // righe caricate, struttura "Import Danea Inventario"
   var newItems = [];            // articoli non trovati nei cataloghi, compilati a mano, esportati in "Nuovi Articoli.xlsx"
@@ -487,19 +499,28 @@
     if(rec.articleCode) map.set(normCode(rec.articleCode), rec);
   }
 
-  // il catalogo importato (dati tuoi, operativi) ha sempre priorità sul listino Joma precaricato
+  // il catalogo importato (dati tuoi, operativi) ha sempre priorità su tutti i listini precaricati
   function lookupCode(key){
-    return catalogImported.get(key) || catalogJoma.get(key);
+    return catalogImported.get(key) || catalogStatic.get(key);
+  }
+
+  function staticRowsTotal(){
+    var total = 0;
+    STATIC_BRANDS.forEach(function(b){ total += staticBrandRows[b.key]; });
+    return total;
   }
 
   function refreshCatalogBadge(){
     var parts = [];
-    if(catalogJomaStatus === 'loading') parts.push('listino Joma in caricamento…');
-    else if(catalogJomaRows > 0) parts.push(catalogJomaRows.toLocaleString('it-IT') + ' Joma');
-    else if(catalogJomaStatus === 'error') parts.push('listino Joma non disponibile');
+    var anyLoading = false;
+    STATIC_BRANDS.forEach(function(b){
+      if(staticBrandStatus[b.key] === 'loading'){ anyLoading = true; }
+      else if(staticBrandRows[b.key] > 0){ parts.push(staticBrandRows[b.key].toLocaleString('it-IT') + ' ' + b.label); }
+    });
+    if(anyLoading) parts.push('listini in caricamento…');
     if(catalogImportedRows > 0) parts.push(catalogImportedRows.toLocaleString('it-IT') + ' tuoi');
 
-    var total = catalogJomaRows + catalogImportedRows;
+    var total = staticRowsTotal() + catalogImportedRows;
     catalogCount.textContent = total ? ('(' + total.toLocaleString('it-IT') + ' articoli)') : '';
     if(parts.length){
       catalogBadge.classList.add('has-data');
@@ -510,34 +531,39 @@
     }
   }
 
-  // ---------- listino Joma precaricato (memorizzato nell'app, non nel browser dell'utente) ----------
-  function loadJomaCatalog(){
-    catalogJomaStatus = 'loading';
+  // ---------- listini precaricati (memorizzati nell'app, non nel browser dell'utente) ----------
+  function loadStaticBrand(brand){
+    staticBrandStatus[brand.key] = 'loading';
     refreshCatalogBadge();
-    fetch('data/joma-catalog.json')
+    fetch(brand.file)
       .then(function(r){ if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       .then(function(arr){
         arr.forEach(function(r){
           var variant = [r.s, r.c].filter(Boolean).join(' - ');
           var rec = {
-            barcode: r.b,
-            articleCode: r.a,
-            description: r.d,
+            barcode: r.b || '',
+            articleCode: r.a || '',
+            description: r.d || '',
             variant: variant,
-            price: (r.p === '' || r.p === undefined) ? '' : r.p,
+            price: (r.p === '' || r.p === undefined || r.p === null) ? '' : r.p,
             stock: '',
-            source: 'joma'
+            source: brand.key,
+            sourceLabel: brand.source
           };
-          indexRecord(rec, catalogJoma);
+          indexRecord(rec, catalogStatic);
         });
-        catalogJomaRows = arr.length;
-        catalogJomaStatus = 'ready';
+        staticBrandRows[brand.key] = arr.length;
+        staticBrandStatus[brand.key] = 'ready';
         refreshCatalogBadge();
       })
       .catch(function(){
-        catalogJomaStatus = 'error';
+        staticBrandStatus[brand.key] = 'error';
         refreshCatalogBadge();
       });
+  }
+
+  function loadAllStaticBrands(){
+    STATIC_BRANDS.forEach(loadStaticBrand);
   }
 
   // ---------- tiny CSV parser (handles quoted fields, , or ; delimiter) ----------
@@ -648,6 +674,22 @@
   // ---------- lookup + result rendering ----------
   var currentCode = null, currentRec = null, currentEntry = null;
 
+  var PRICE_LABELS = {
+    joma: 'PVP listino Joma',
+    toptex: 'Listino 1 (gestionale)',
+    errea: 'Listino 1 (gestionale)',
+    macron: 'Listino 1 (gestionale)',
+    teamwear: 'Prezzo (listino fornitore)'
+  };
+  var SOURCE_NOTES = {
+    joma: 'Prezzo = listino pubblico Joma, non il tuo prezzo di vendita. Nessuna giacenza: il listino fornitore non contiene la tua disponibilità.',
+    toptex: 'Prezzo = campo "Listino 1" del tuo gestionale per questo articolo, cristallizzato nello snapshot che mi hai dato il 14/10/2026 — se lo hai cambiato dopo, qui non si aggiorna da solo. Nessuna giacenza: è uno snapshot statico, non il magazzino in tempo reale.',
+    errea: 'Prezzo = campo "Listino 1" del tuo gestionale per questo articolo, cristallizzato nello snapshot che mi hai dato il 14/10/2026 — se lo hai cambiato dopo, qui non si aggiorna da solo. Nessuna giacenza, e nessun codice a barre nel file che mi hai dato: questo articolo si trova solo cercando il codice articolo a mano, non scansionando.',
+    macron: 'Prezzo = campo "Listino 1" del tuo gestionale per questo articolo, cristallizzato nello snapshot che mi hai dato il 14/10/2026 — se lo hai cambiato dopo, qui non si aggiorna da solo. Nessuna giacenza, e nessun codice a barre nel file che mi hai dato: questo articolo si trova solo cercando il codice articolo a mano, non scansionando.',
+    kappa: 'Nessun prezzo disponibile: il file Kappa non aveva un campo prezzo univoco su cui potessi fidarmi (valori ambigui tra costo e listino). Nessuna giacenza: è un database articoli, non il tuo magazzino.',
+    teamwear: 'Prezzo preso così com\'è dal file del fornitore — non sono certo se sia un costo d\'acquisto o un prezzo di vendita: verificalo prima di usarlo con un cliente. Nessuna giacenza.'
+  };
+
   function handleCode(code, format){
     var now = Date.now();
     if(code === lastCode && (now - lastCodeAt) < 2000) return; // debounce repeats
@@ -684,20 +726,20 @@
       addField('Descrizione', rec.description || '—');
       if(rec.variant) addField('Taglia/Colore', rec.variant);
       if(rec.price !== '' && rec.price !== undefined && rec.price !== null){
-        addField(rec.source === 'joma' ? 'PVP listino Joma' : 'Prezzo', rec.price);
+        addField(PRICE_LABELS[rec.source] || 'Prezzo', rec.price);
       }
       if(rec.stock) addField('Giacenza Easyfatt', rec.stock);
-      addField('Fonte', rec.source === 'joma' ? 'Listino Joma precaricato' : 'Catalogo importato (tuo)');
+      addField('Fonte', rec.sourceLabel || 'Catalogo importato (tuo)');
       if(format) addField('Formato', format);
-      if(rec.source === 'joma'){
-        resNote.textContent = 'Prezzo = listino pubblico Joma, non il tuo prezzo di vendita. Nessuna giacenza: il listino fornitore non contiene la tua disponibilità.';
+      if(SOURCE_NOTES[rec.source]){
+        resNote.textContent = SOURCE_NOTES[rec.source];
       }
       newRow.classList.remove('show');
     } else {
       resStatus.textContent = 'non trovato';
       resStatus.className = 'result-status miss';
       addField('Formato', format || '—');
-      resNote.textContent = (catalogJomaRows + catalogImportedRows)
+      resNote.textContent = (staticRowsTotal() + catalogImportedRows)
         ? 'Codice non presente nei cataloghi disponibili. Potrebbe essere un articolo nuovo, di un altro fornitore, o un catalogo da riaggiornare.'
         : 'Nessun catalogo disponibile: importa il CSV qui sotto per far riconoscere gli articoli.';
       newFornitore.value = ''; newCod.value = ''; newDesc.value = ''; newTaglia.value = ''; newColore.value = ''; newQty.value = 1;
@@ -970,7 +1012,7 @@
 
   // ---------- init ----------
   loadCatalog();
-  loadJomaCatalog();
+  loadAllStaticBrands();
   loadHistory();
   loadLoaded();
   loadNew();

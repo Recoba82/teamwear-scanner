@@ -1,13 +1,18 @@
 // TeamWear Scanner — cache offline per la shell dell'app.
 // Il catalogo e la cronologia vivono in localStorage (gestiti da index.html), non qui.
-const CACHE = 'tw-scanner-v6';
+const CACHE = 'tw-scanner-v7';
 const SHELL = [
   './index.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
-  './data/joma-catalog.json'
+  './data/joma-catalog.json',
+  './data/toptex-catalog.json',
+  './data/errea-catalog.json',
+  './data/macron-catalog.json',
+  './data/kappa-catalog.json',
+  './data/teamwear-catalog.json'
 ];
 
 self.addEventListener('install', function(event){
